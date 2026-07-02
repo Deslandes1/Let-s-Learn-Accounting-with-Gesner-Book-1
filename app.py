@@ -5,13 +5,43 @@ import os
 import subprocess
 import random
 
-# ---------- Try to import deep-translator ----------
+# ---------- Try multiple translation libraries ----------
+TRANSLATOR_AVAILABLE = False
+translator = None
+
 try:
     from deep_translator import GoogleTranslator
-    DEEP_TRANSLATOR_AVAILABLE = True
+    translator = GoogleTranslator(source='auto', target='en')
+    TRANSLATOR_AVAILABLE = True
+    TRANSLATOR_LIB = "deep-translator"
 except ImportError:
-    DEEP_TRANSLATOR_AVAILABLE = False
-    st.warning("⚠️ deep-translator not installed. Translations will fall back to English. To enable, run: pip install deep-translator")
+    try:
+        from googletrans import Translator as GTranslator
+        translator = GTranslator()
+        TRANSLATOR_AVAILABLE = True
+        TRANSLATOR_LIB = "googletrans"
+    except ImportError:
+        TRANSLATOR_AVAILABLE = False
+
+if not TRANSLATOR_AVAILABLE:
+    st.warning("⚠️ No translation library found. Install deep-translator (recommended) with: pip install deep-translator")
+
+def translate_text(text, dest_lang):
+    """Translate text using available library."""
+    if not TRANSLATOR_AVAILABLE or not text:
+        return text
+    if dest_lang == "en":
+        return text
+    try:
+        if TRANSLATOR_LIB == "deep-translator":
+            # Deep translator needs a new instance per language or set target
+            trans = GoogleTranslator(source='auto', target=dest_lang)
+            return trans.translate(text)
+        elif TRANSLATOR_LIB == "googletrans":
+            return translator.translate(text, dest=dest_lang).text
+    except Exception as e:
+        return text  # fallback
+    return text
 
 st.set_page_config(page_title="Let's Learn Accounting with Gesner", layout="wide")
 
@@ -194,25 +224,13 @@ LANGUAGES = {
     }
 }
 
-# ---------- Translation helper using deep_translator ----------
-if DEEP_TRANSLATOR_AVAILABLE:
-    def translate_text(text, dest_lang):
-        """Translate text using deep-translator (Google Translate)."""
-        try:
-            translator = GoogleTranslator(source='auto', target=dest_lang)
-            return translator.translate(text)
-        except Exception:
-            return text
-else:
-    def translate_text(text, dest_lang):
-        return text
-
+# ---------- Translation helper (caching) ----------
 def translate_lesson_content(lesson_dict, dest_lang, lesson_num):
     """
     Translate a lesson dictionary from English to the destination language.
     Caches results in session_state.
     """
-    if not DEEP_TRANSLATOR_AVAILABLE:
+    if not TRANSLATOR_AVAILABLE or dest_lang == "en":
         return lesson_dict
 
     if "translations" not in st.session_state:
@@ -221,10 +239,6 @@ def translate_lesson_content(lesson_dict, dest_lang, lesson_num):
     cache_key = f"lesson_{lesson_num}_{dest_lang}"
     if cache_key in st.session_state.translations:
         return st.session_state.translations[cache_key]
-
-    if dest_lang == "en":
-        st.session_state.translations[cache_key] = lesson_dict
-        return lesson_dict
 
     translated = {}
     translated["title"] = translate_text(lesson_dict.get("title", ""), dest_lang)
@@ -251,9 +265,6 @@ def translate_lesson_content(lesson_dict, dest_lang, lesson_num):
 
 # ---------- Accounting Lesson Content (English originals) ----------
 def get_lesson_data(lesson_num, lang_code):
-    # All 20 lessons – omitted for brevity but included in final code.
-    # You will paste the full 20 lessons here.
-    # For now, I'll show a placeholder – the final answer will contain all.
     lessons_en = {
         1: {
             "title": "What is Accounting? Cash In and Cash Out",
@@ -270,11 +281,293 @@ def get_lesson_data(lesson_num, lang_code):
                 {"question": "You buy a book for $12 and a pen for $3. Total Cash Out?", "answer": 15}
             ]
         },
-        # ... (lessons 2-20 would be here)
+        2: {
+            "title": "Sources of Income (Cash In)",
+            "symbols": "💵 Wage | 💼 Business | 🏦 Interest | 🎁 Gifts",
+            "table": "Common income sources:\nWage: $15/hr, 40 hrs/week → $600/week\nBusiness: selling handmade items\nInterest: bank savings",
+            "demos": [
+                {"question": "You work 5 hours at $10/hour. How much do you earn?", "explanation": "5 × $10 = $50 Cash In.", "answer": 50},
+                {"question": "You sell 20 cookies at $2 each. Total Cash In?", "explanation": "20 × $2 = $40 Cash In.", "answer": 40},
+                {"question": "You receive $25 as a birthday gift. Cash In?", "explanation": "Gift = $25 Cash In.", "answer": 25}
+            ],
+            "interactive": [
+                {"question": "Work 8 hours at $12/hour. Earnings?", "answer": 96},
+                {"question": "Sell 15 bracelets at $4 each. Cash In?", "answer": 60},
+                {"question": "Receive $50 as a graduation gift. Cash In?", "answer": 50}
+            ]
+        },
+        3: {
+            "title": "Types of Expenses (Cash Out)",
+            "symbols": "🏠 Rent | 🍔 Food | 🚗 Transport | 🎮 Entertainment | 📚 Education",
+            "table": "Monthly expense example:\nRent: $500\nFood: $200\nTransport: $100\nEntertainment: $50\nTotal: $850",
+            "demos": [
+                {"question": "You pay $300 for rent and $120 for groceries. Total Cash Out?", "explanation": "$300 + $120 = $420.", "answer": 420},
+                {"question": "You spend $15 on lunch and $5 on coffee. Total Cash Out?", "explanation": "$15 + $5 = $20.", "answer": 20},
+                {"question": "You buy a $30 video game and a $10 snack. Total Cash Out?", "explanation": "$30 + $10 = $40.", "answer": 40}
+            ],
+            "interactive": [
+                {"question": "Rent $450, Food $180, Transport $70. Total?", "answer": 700},
+                {"question": "Lunch $12, Coffee $4, Snack $3. Total?", "answer": 19},
+                {"question": "Book $25, Stationery $15. Total?", "answer": 40}
+            ]
+        },
+        4: {
+            "title": "Budgeting Basics",
+            "symbols": "📋 Budget = Planned Cash In and Cash Out",
+            "table": "Sample monthly budget:\nIncome: $1000\nRent: $300\nFood: $200\nEntertainment: $100\nSavings: $400",
+            "demos": [
+                {"question": "You earn $800 and plan to spend $300 on rent and $200 on food. How much can you save?", "explanation": "$800 - $300 - $200 = $300 savings.", "answer": 300},
+                {"question": "Your budget: Income $1200, Expenses: Rent $400, Transport $150, Food $250. What's left?", "explanation": "$1200 - $400 - $150 - $250 = $400 left.", "answer": 400},
+                {"question": "You want to save $200 from a $600 income. How much can you spend?", "explanation": "Spending = $600 - $200 = $400.", "answer": 400}
+            ],
+            "interactive": [
+                {"question": "Income $900, Expenses: Rent $350, Food $200, Entertainment $80. Left?", "answer": 270},
+                {"question": "Budget: Income $1000, Expenses $700. Savings?", "answer": 300},
+                {"question": "Want to save $150 from $500 income. Spending?", "answer": 350}
+            ]
+        },
+        5: {
+            "title": "Saving Money – Why and How",
+            "symbols": "🏦 Save for goals | 📈 Compound interest | 🎯 Emergency fund",
+            "table": "Saving example:\nGoal: buy a bike for $200\nSave $20 per week → 10 weeks",
+            "demos": [
+                {"question": "You save $15 per week. How much in 4 weeks?", "explanation": "$15 × 4 = $60 saved.", "answer": 60},
+                {"question": "You need $120 for a new game. Save $10 per week. How many weeks?", "explanation": "$120 ÷ $10 = 12 weeks.", "answer": 12},
+                {"question": "You have $100 saved and add $20 each month. How much after 3 months?", "explanation": "$100 + ($20×3) = $160.", "answer": 160}
+            ],
+            "interactive": [
+                {"question": "Save $8 per week for 5 weeks. Total?", "answer": 40},
+                {"question": "Need $80, save $5 per week. Weeks?", "answer": 16},
+                {"question": "Start with $50, add $25 monthly for 4 months. Total?", "answer": 150}
+            ]
+        },
+        6: {
+            "title": "Market Pricing – How Prices Are Set",
+            "symbols": "📈 Supply | 📉 Demand | 💲 Equilibrium price",
+            "table": "Price example:\nIf supply is high and demand low → price falls\nIf supply low and demand high → price rises",
+            "demos": [
+                {"question": "A toy is popular, demand is high, supply is limited. Will the price go up or down?", "explanation": "High demand + low supply → price goes up.", "answer": "up"},
+                {"question": "A farmer has too many apples, demand is normal. What happens to price?", "explanation": "High supply + normal demand → price goes down.", "answer": "down"},
+                {"question": "If a new phone is released and many people want it, what happens to price?", "explanation": "High demand → price tends to rise.", "answer": "rises"}
+            ],
+            "interactive": [
+                {"question": "If supply of masks is low and demand is high, price goes up or down?", "answer": "up"},
+                {"question": "If supply of gas is high and demand is low, price goes up or down?", "answer": "down"},
+                {"question": "If a new game has huge demand and limited copies, price likely?", "answer": "rises"}
+            ]
+        },
+        7: {
+            "title": "Needs vs. Wants",
+            "symbols": "✅ Needs (essential) | ❌ Wants (optional)",
+            "table": "Needs: food, water, shelter, clothing\nWants: video games, designer shoes, vacations",
+            "demos": [
+                {"question": "Is buying a new smartphone a need or a want?", "explanation": "A smartphone is often a want, unless your old one is broken for work.", "answer": "want"},
+                {"question": "Is buying groceries a need or a want?", "explanation": "Groceries are a need – you must eat to survive.", "answer": "need"},
+                {"question": "Is a monthly gym membership a need or a want?", "explanation": "Gym is a want – you can exercise for free outside.", "answer": "want"}
+            ],
+            "interactive": [
+                {"question": "Water bill – need or want?", "answer": "need"},
+                {"question": "Brand new sneakers – need or want?", "answer": "want"},
+                {"question": "Rent – need or want?", "answer": "need"}
+            ]
+        },
+        8: {
+            "title": "Opportunity Cost – The Cost of Choices",
+            "symbols": "⚖️ Opportunity cost = value of next best alternative",
+            "table": "Example: If you spend $20 on a movie, you cannot buy a book. The opportunity cost is the book.",
+            "demos": [
+                {"question": "You have $30. You can buy a pizza or a book. If you choose the book, what is the opportunity cost?", "explanation": "The opportunity cost is the pizza you gave up.", "answer": "pizza"},
+                {"question": "You can work 5 hours and earn $50, or go to a concert. If you work, what is the opportunity cost?", "explanation": "The opportunity cost is the concert you missed.", "answer": "concert"},
+                {"question": "You have one hour. You can study or play video games. If you choose to study, what is the opportunity cost?", "explanation": "The opportunity cost is the gaming time you gave up.", "answer": "gaming time"}
+            ],
+            "interactive": [
+                {"question": "You can buy a jacket or a backpack. Choose backpack – opportunity cost?", "answer": "jacket"},
+                {"question": "You can go to a friend's party or work overtime. Work overtime – opportunity cost?", "answer": "party"},
+                {"question": "You have 30 minutes. Exercise or read. Exercise – opportunity cost?", "answer": "reading"}
+            ]
+        },
+        9: {
+            "title": "Tracking Expenses – Keeping Records",
+            "symbols": "📝 Expense log | 🧾 Receipts | 📊 Monthly summary",
+            "table": "Track every small expense to see where money goes.",
+            "demos": [
+                {"question": "You log: Mon: $5 coffee, Tue: $10 lunch, Wed: $3 snack. Total for 3 days?", "explanation": "$5+$10+$3 = $18.", "answer": 18},
+                {"question": "You spend $15 on gas, $20 on groceries, $8 on snacks. Total?", "explanation": "$15+$20+$8 = $43.", "answer": 43},
+                {"question": "You track $4 on bus fare, $6 on breakfast, $2 on water. Total?", "explanation": "$4+$6+$2 = $12.", "answer": 12}
+            ],
+            "interactive": [
+                {"question": "Coffee $6, Lunch $12, Snack $4. Total?", "answer": 22},
+                {"question": "Bus $3, Breakfast $7, Magazine $5. Total?", "answer": 15},
+                {"question": "Groceries $28, Cleaning supplies $12. Total?", "answer": 40}
+            ]
+        },
+        10: {
+            "title": "Emergency Fund – Be Prepared",
+            "symbols": "🆘 Emergency = unexpected expenses | 🏦 Save 3-6 months of expenses",
+            "table": "If your monthly expenses are $500, aim for $1500 - $3000 in emergency fund.",
+            "demos": [
+                {"question": "Monthly expenses $600. How much for 3 months?", "explanation": "$600 × 3 = $1800.", "answer": 1800},
+                {"question": "You have $1000 saved. Is that enough for 2 months of $400 expenses?", "explanation": "2 × $400 = $800, so yes, $1000 is enough.", "answer": "yes"},
+                {"question": "You save $50 each month for emergency. After 12 months, how much?", "explanation": "$50 × 12 = $600.", "answer": 600}
+            ],
+            "interactive": [
+                {"question": "Monthly expenses $300. 6 months emergency fund?", "answer": 1800},
+                {"question": "Have $1200, monthly expenses $450. Enough for 2 months?", "answer": "yes"},
+                {"question": "Save $30/month for 10 months. Total?", "answer": 300}
+            ]
+        },
+        11: {
+            "title": "Introduction to Investing",
+            "symbols": "📈 Stocks | 💰 Dividends | 📊 Risk & Return",
+            "table": "Investing grows money over time. Higher risk may bring higher returns.",
+            "demos": [
+                {"question": "You invest $100 at 10% annual return. After 1 year, how much?", "explanation": "$100 + 10% of $100 = $110.", "answer": 110},
+                {"question": "If you invest $200 at 5% return, after 1 year?", "explanation": "$200 + 5% of $200 = $210.", "answer": 210},
+                {"question": "You invest $50 each month for 6 months. Total invested?", "explanation": "$50 × 6 = $300.", "answer": 300}
+            ],
+            "interactive": [
+                {"question": "Invest $150 at 8% return. After 1 year?", "answer": 162},
+                {"question": "Invest $80 at 6% return. After 1 year?", "answer": 84.8},
+                {"question": "Invest $40 monthly for 5 months. Total?", "answer": 200}
+            ]
+        },
+        12: {
+            "title": "Understanding Debt",
+            "symbols": "💳 Credit card debt | 🏦 Loan | 💸 Interest",
+            "table": "Borrowing money costs interest. Pay back as soon as possible.",
+            "demos": [
+                {"question": "You borrow $500 at 10% interest per year. How much interest after one year?", "explanation": "10% of $500 = $50 interest.", "answer": 50},
+                {"question": "You owe $200 on a credit card with 20% annual interest. Interest for one year?", "explanation": "20% of $200 = $40.", "answer": 40},
+                {"question": "If you borrow $1000 at 5% interest, what is total to repay after one year?", "explanation": "$1000 + $50 = $1050.", "answer": 1050}
+            ],
+            "interactive": [
+                {"question": "Borrow $300 at 8% interest. Annual interest?", "answer": 24},
+                {"question": "Owe $150 at 12% interest. Annual interest?", "answer": 18},
+                {"question": "Borrow $600 at 4% interest. Total after one year?", "answer": 624}
+            ]
+        },
+        13: {
+            "title": "Credit vs. Debit",
+            "symbols": "💳 Credit = borrow now, pay later | 🏦 Debit = use your own money",
+            "table": "Credit cards can build credit history but may incur interest.\nDebit cards spend money you already have.",
+            "demos": [
+                {"question": "You buy a $50 item with a credit card. Do you pay immediately?", "explanation": "No, you'll pay later in the billing cycle.", "answer": "no"},
+                {"question": "You use a debit card to buy $30 groceries. Where does money come from?", "explanation": "From your bank account (your own money).", "answer": "bank account"},
+                {"question": "If you don't pay credit card bill on time, what happens?", "explanation": "You may be charged interest or late fees.", "answer": "interest/fees"}
+            ],
+            "interactive": [
+                {"question": "Using a credit card means you are borrowing money. True or False?", "answer": "true"},
+                {"question": "Debit cards spend money you have saved. True or False?", "answer": "true"},
+                {"question": "Credit cards are free to use with no downside. True or False?", "answer": "false"}
+            ]
+        },
+        14: {
+            "title": "Cash Flow Statement",
+            "symbols": "📊 Cash In - Cash Out = Net Cash Flow",
+            "table": "Example:\nCash In: $1500\nCash Out: $1200\nNet Cash Flow: +$300",
+            "demos": [
+                {"question": "Cash In: $2000, Cash Out: $1800. Net Cash Flow?", "explanation": "$2000 - $1800 = +$200.", "answer": 200},
+                {"question": "Cash In: $500, Cash Out: $700. Net Cash Flow?", "explanation": "$500 - $700 = -$200 (negative).", "answer": -200},
+                {"question": "Cash In: $3000, Cash Out: $2500. Net Cash Flow?", "explanation": "$3000 - $2500 = +$500.", "answer": 500}
+            ],
+            "interactive": [
+                {"question": "Cash In: $1200, Cash Out: $900. Net?", "answer": 300},
+                {"question": "Cash In: $800, Cash Out: $950. Net?", "answer": -150},
+                {"question": "Cash In: $2500, Cash Out: $2000. Net?", "answer": 500}
+            ]
+        },
+        15: {
+            "title": "Income Statement (Profit & Loss)",
+            "symbols": "📈 Revenue - Expenses = Net Income",
+            "table": "Revenue: $5000\nExpenses: $3000\nNet Income: $2000",
+            "demos": [
+                {"question": "Revenue $4000, Expenses $2500. Net Income?", "explanation": "$4000 - $2500 = $1500 profit.", "answer": 1500},
+                {"question": "Revenue $1000, Expenses $1200. Net Income?", "explanation": "$1000 - $1200 = -$200 (loss).", "answer": -200},
+                {"question": "Revenue $8000, Expenses $6000. Net Income?", "explanation": "$8000 - $6000 = $2000.", "answer": 2000}
+            ],
+            "interactive": [
+                {"question": "Revenue $3000, Expenses $2800. Net Income?", "answer": 200},
+                {"question": "Revenue $900, Expenses $1100. Net Income?", "answer": -200},
+                {"question": "Revenue $5000, Expenses $4000. Net Income?", "answer": 1000}
+            ]
+        },
+        16: {
+            "title": "Simplified Balance Sheet",
+            "symbols": "📊 Assets = Liabilities + Equity",
+            "table": "Assets: Cash $500, Car $1000\nLiabilities: Loan $300\nEquity = Assets - Liabilities = $1200",
+            "demos": [
+                {"question": "Assets: $2000, Liabilities: $800. Equity?", "explanation": "$2000 - $800 = $1200.", "answer": 1200},
+                {"question": "Assets: $1500, Liabilities: $500. Equity?", "explanation": "$1500 - $500 = $1000.", "answer": 1000},
+                {"question": "Assets: $3000, Liabilities: $1200. Equity?", "explanation": "$3000 - $1200 = $1800.", "answer": 1800}
+            ],
+            "interactive": [
+                {"question": "Assets $2500, Liabilities $900. Equity?", "answer": 1600},
+                {"question": "Assets $1800, Liabilities $600. Equity?", "answer": 1200},
+                {"question": "Assets $4000, Liabilities $1500. Equity?", "answer": 2500}
+            ]
+        },
+        17: {
+            "title": "Setting Financial Goals",
+            "symbols": "🎯 Short-term (<1 year) | 🎯 Medium-term (1-5 years) | 🎯 Long-term (>5 years)",
+            "table": "Example: Save $500 for a vacation (short-term), $3000 for a car (medium), $10000 for education (long).",
+            "demos": [
+                {"question": "Saving for a laptop in 6 months. Short, medium, or long term?", "explanation": "6 months is short-term.", "answer": "short"},
+                {"question": "Saving for a house down payment in 3 years. Short, medium, or long term?", "explanation": "3 years is medium-term.", "answer": "medium"},
+                {"question": "Saving for retirement in 20 years. Short, medium, or long term?", "explanation": "20 years is long-term.", "answer": "long"}
+            ],
+            "interactive": [
+                {"question": "Saving for a new phone in 4 months?", "answer": "short"},
+                {"question": "Saving for a car in 2 years?", "answer": "medium"},
+                {"question": "Saving for a child's college in 15 years?", "answer": "long"}
+            ]
+        },
+        18: {
+            "title": "Spending Plans (Budgets)",
+            "symbols": "📋 50/30/20 rule: 50% Needs, 30% Wants, 20% Savings",
+            "table": "Income: $1000\nNeeds: $500\nWants: $300\nSavings: $200",
+            "demos": [
+                {"question": "You earn $600. According to 50/30/20, how much for needs?", "explanation": "50% of $600 = $300.", "answer": 300},
+                {"question": "Income $800. How much for wants (30%)?", "explanation": "30% of $800 = $240.", "answer": 240},
+                {"question": "Income $1200. How much for savings (20%)?", "explanation": "20% of $1200 = $240.", "answer": 240}
+            ],
+            "interactive": [
+                {"question": "Income $400. Needs (50%)?", "answer": 200},
+                {"question": "Income $750. Wants (30%)?", "answer": 225},
+                {"question": "Income $900. Savings (20%)?", "answer": 180}
+            ]
+        },
+        19: {
+            "title": "Evaluating Purchases – Important vs. Less Important",
+            "symbols": "✔️ Important: essentials | ❌ Less important: luxuries",
+            "table": "Important: rent, groceries, medicine\nLess important: designer clothes, latest gadgets",
+            "demos": [
+                {"question": "Is a new TV an important purchase or less important?", "explanation": "A new TV is less important unless your current one is broken.", "answer": "less important"},
+                {"question": "Is prescription medication important or less important?", "explanation": "Medication is important.", "answer": "important"},
+                {"question": "Is dining out every day important or less important?", "explanation": "Dining out daily is less important; cooking at home is cheaper.", "answer": "less important"}
+            ],
+            "interactive": [
+                {"question": "Textbooks for school – important or less important?", "answer": "important"},
+                {"question": "A new gaming console – important or less important?", "answer": "less important"},
+                {"question": "Heating bill in winter – important or less important?", "answer": "important"}
+            ]
+        },
+        20: {
+            "title": "Review – Putting It All Together",
+            "symbols": "All key concepts: cash flow, budgeting, saving, investing, debt, goals",
+            "table": "Remember: track your money, spend wisely, save for the future.",
+            "demos": [
+                {"question": "You earn $2000, spend $1500, save $300, and invest $200. What is your net cash flow?", "explanation": "Net cash flow = earnings - total spending = $2000 - ($1500+$300+$200) = $2000 - $2000 = $0.", "answer": 0},
+                {"question": "If you have $500 in savings and add $100 each month, how much after 6 months?", "explanation": "$500 + ($100×6) = $1100.", "answer": 1100},
+                {"question": "What is the 50/30/20 rule?", "explanation": "50% needs, 30% wants, 20% savings.", "answer": "50/30/20"}
+            ],
+            "interactive": [
+                {"question": "You earn $1500, spend $1200 on needs, $200 on wants, and save $100. How much left?", "answer": 0},
+                {"question": "You save $200 per month. How much in 1 year?", "answer": 2400},
+                {"question": "What percentage of income should go to savings according to 50/30/20?", "answer": 20}
+            ]
+        }
     }
-    # For this demonstration, I'm only showing lesson 1, but the final answer will include all 20.
-    # The code structure remains identical.
-    if lang_code == "en" or lang_code == "English" or not DEEP_TRANSLATOR_AVAILABLE:
+    if lang_code == "en" or lang_code == "English" or not TRANSLATOR_AVAILABLE:
         return lessons_en.get(lesson_num, lessons_en[1])
     dest = "fr" if lang_code == "fr" else "es" if lang_code == "es" else "en"
     lesson_en = lessons_en.get(lesson_num, lessons_en[1])
