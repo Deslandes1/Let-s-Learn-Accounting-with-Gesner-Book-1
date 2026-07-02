@@ -4,6 +4,8 @@ import base64
 import os
 import subprocess
 import random
+import googletrans
+from googletrans import Translator
 
 st.set_page_config(page_title="Let's Learn Accounting with Gesner", layout="wide")
 
@@ -186,9 +188,62 @@ LANGUAGES = {
     }
 }
 
+# ---------- Translation helper ----------
+translator = Translator()
+
+def translate_lesson_content(lesson_dict, dest_lang, lesson_num):
+    """
+    Translate a lesson dictionary (title, symbols, table, demos, interactive)
+    from English to the destination language.
+    Caches results in session_state to avoid repeated translations.
+    """
+    if "translations" not in st.session_state:
+        st.session_state.translations = {}
+
+    cache_key = f"lesson_{lesson_num}_{dest_lang}"
+    if cache_key in st.session_state.translations:
+        return st.session_state.translations[cache_key]
+
+    # If language is English, return original without translation
+    if dest_lang == "en":
+        st.session_state.translations[cache_key] = lesson_dict
+        return lesson_dict
+
+    translated = {}
+    # Translate title
+    translated["title"] = translator.translate(lesson_dict["title"], dest=dest_lang).text if lesson_dict.get("title") else ""
+    # Translate symbols
+    translated["symbols"] = translator.translate(lesson_dict["symbols"], dest=dest_lang).text if lesson_dict.get("symbols") else ""
+    # Translate table
+    translated["table"] = translator.translate(lesson_dict["table"], dest=dest_lang).text if lesson_dict.get("table") else ""
+
+    # Translate demos
+    demos = lesson_dict.get("demos", [])
+    translated_demos = []
+    for d in demos:
+        question = translator.translate(d["question"], dest=dest_lang).text if d.get("question") else ""
+        explanation = translator.translate(d["explanation"], dest=dest_lang).text if d.get("explanation") else ""
+        answer = d["answer"]  # keep answer as is (numbers, short text)
+        translated_demos.append({"question": question, "explanation": explanation, "answer": answer})
+    translated["demos"] = translated_demos
+
+    # Translate interactive
+    interactive = lesson_dict.get("interactive", [])
+    translated_interactive = []
+    for item in interactive:
+        q = translator.translate(item["question"], dest=dest_lang).text if item.get("question") else ""
+        ans = item["answer"]
+        translated_interactive.append({"question": q, "answer": ans})
+    translated["interactive"] = translated_interactive
+
+    # Cache and return
+    st.session_state.translations[cache_key] = translated
+    return translated
+
 # ---------- Accounting Lesson Content ----------
-def get_lesson_data(lesson_num):
-    lessons = {
+def get_lesson_data(lesson_num, lang_code):
+    # Original English lessons
+    lessons_en = {
         1: {
             "title": "What is Accounting? Cash In and Cash Out",
             "symbols": "💰 Cash In (Revenue) | 💸 Cash Out (Expenses) | 📈 Profit = Cash In - Cash Out",
@@ -490,7 +545,16 @@ def get_lesson_data(lesson_num):
             ]
         }
     }
-    return lessons.get(lesson_num, lessons[1])
+
+    # If language is English, return original
+    if lang_code == "en" or lang_code == "English":
+        return lessons_en.get(lesson_num, lessons_en[1])
+
+    # Otherwise translate the lesson
+    # Map language code to destination language for googletrans
+    dest = "fr" if lang_code == "fr" else "es" if lang_code == "es" else "en"
+    lesson_en = lessons_en.get(lesson_num, lessons_en[1])
+    return translate_lesson_content(lesson_en, dest, lesson_num)
 
 # ---------- Authentication ----------
 if "authenticated" not in st.session_state:
@@ -588,8 +652,10 @@ def play_audio(text, key):
                 st.markdown(f'<audio controls src="data:audio/mp3;base64,{b64}" autoplay style="width: 100%;"></audio>', unsafe_allow_html=True)
             os.unlink(tmp.name)
 
-# ---------- Load lesson data ----------
-lesson_data = get_lesson_data(lesson_number)
+# ---------- Load lesson data (translated) ----------
+# Get language code for translation: "en", "fr", "es"
+lang_code = LANGUAGES[lang]["code"]  # e.g., "fr", "es", "en"
+lesson_data = get_lesson_data(lesson_number, lang_code)
 st.markdown(f"## 📖 {ui['lesson_prefix']} {lesson_number}: {lesson_data['title']}")
 
 tab1, tab2, tab3, tab4 = st.tabs(ui['tabs'])
@@ -612,7 +678,7 @@ with tab2:
         if st.button(f"{ui['demo_button']} {i}", key=f"demo_{lesson_number}_{i}"):
             st.info(f"{ui['demo_explanation']} {demo['explanation']}")
             st.success(f"{ui['demo_solution']} {demo['question']} = {demo['answer']}")
-            # Play audio of explanation + solution
+            # Play audio of explanation + solution – now in the target language
             audio_text = f"Problem: {demo['question']}. {demo['explanation']} The answer is {demo['answer']}."
             play_audio(audio_text, f"demo_audio_{lesson_number}_{i}")
         st.markdown("---")
@@ -635,7 +701,8 @@ with tab3:
             if str(user_ans).lower() == str(ex["answer"]).lower():
                 st.success(f"{ui['exercise_correct']} {ex['question']} = {ex['answer']}")
                 st.session_state[f"ex_answers_{lesson_number}"][i] = True
-                play_audio(f"Correct! {ex['question']} equals {ex['answer']}. Well done!", f"success_{lesson_number}_{i}")
+                # Play audio of correct message – translated via UI strings
+                play_audio(f"{ui['exercise_correct']} {ex['question']} equals {ex['answer']}. Well done!", f"success_{lesson_number}_{i}")
             else:
                 st.error(f"{ui['exercise_hint']} {ex['answer']}.")
         st.markdown("---")
@@ -646,12 +713,13 @@ with tab4:
     st.markdown(ui['quiz_instruction'])
     if "quiz_answers" not in st.session_state:
         st.session_state.quiz_answers = {}
-    # Generate quiz questions (one from each lesson)
+    # Generate quiz questions – we need to fetch each lesson's interactive questions in the current language
     quiz_questions = []
     for l in range(1, 21):
-        lesson = get_lesson_data(l)
-        if lesson["interactive"]:
-            q = random.choice(lesson["interactive"])
+        # Fetch lesson in current language
+        lesson_l = get_lesson_data(l, lang_code)
+        if lesson_l["interactive"]:
+            q = random.choice(lesson_l["interactive"])
             quiz_questions.append({"lesson": l, "question": q["question"], "answer": q["answer"]})
         else:
             quiz_questions.append({"lesson": l, "question": "Sample", "answer": 0})
